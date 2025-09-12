@@ -10,16 +10,18 @@
     header{height:66px;background:#fff;border-bottom:1px solid #dbdbdb;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10}
     .brand{display:flex;align-items:center;gap:16px}
     .brand h1{font-family:'Grand Hotel',cursive;font-size:30px;margin:0}
-    .search{width:300px}
+    .search{width:300px;display:flex;align-items:center;gap:12px;}
     .container{max-width:980px;margin:28px auto;}
     .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
     .card{background:var(--card);border:1px solid #dbdbdb;border-radius:3px;padding:8px;box-shadow:0 1px 0 rgba(0,0,0,0.02)}
     .thumb{width:100%;aspect-ratio:319/486;object-fit:cover;border-radius:2px;display:block;background:#efefef}
     .controls{margin-top:8px;display:flex;flex-direction:column;gap:8px}
-    select, textarea, button{font-size:14px}
+    select, input, button{font-size:14px}
     select{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;background:#fff}
-    textarea{width:100%;min-height:60px;padding:8px;border:1px solid #ccc;border-radius:4px;resize:vertical}
+    input[type="text"]{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px}
     button{align-self:flex-end;padding:8px 12px;border-radius:4px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+    .tag-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+    .tag-list span{background:#eee;padding:4px 8px;border-radius:12px;font-size:12px}
     .loading{display:flex;align-items:center;justify-content:center;padding:16px;color:var(--muted)}
     @media(min-width:1180px){.page{display:block};.container{max-width:100%;margin:28px;}}
     @media(max-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
@@ -27,13 +29,20 @@
     @media(max-width:460px){.grid{grid-template-columns:repeat(1,1fr)}}
     .spinner{width:28px;height:28px;border-radius:50%;border:4px solid #e9e9e9;border-top-color:var(--muted);animation:spin .8s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}
-    .empty-placeholder{display:flex;align-items:center;justify-content:center;color:#aaa;aspect-ratio:319/486;font-size:14px}
   </style>
 </head>
 <body>
   <header>
     <div class="brand"><h1>Instagram</h1></div>
-    <div class="search"><input type="search" placeholder="Pesquisar" style="width:100%;padding:8px;border-radius:6px;border:1px solid #dbdbdb"></div>
+    <div class="search">
+      <input type="search" placeholder="Pesquisar" style="width:200px;padding:8px;border-radius:6px;border:1px solid #dbdbdb">
+      <select id="filtro-selecao" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
+        <option value="">-- Todos --</option>
+        <option value="relevante">Relevante</option>
+        <option value="irrelevante">Irrelevante</option>
+        <option value="lixo">Lixo</option>
+      </select>
+    </div>
     <nav style="display:flex;gap:12px;align-items:center">
       <button aria-label="Novo" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Novo</button>
       <button aria-label="Perfil" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Perfil</button>
@@ -49,10 +58,11 @@
     <span style="margin-left:8px">Carregando...</span>
   </div>
 
-  <!-- Firebase -->
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
-    import { getFirestore, collection, doc, setDoc, getDoc } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+    import { 
+      getFirestore, collection, doc, setDoc, getDoc, addDoc, query, where, getDocs, updateDoc, arrayUnion 
+    } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
     const firebaseConfig = {
       apiKey: "AIzaSyCNgDqkqhsFQY7bfrWK2_VPtGUoEyyIBq4",
@@ -72,8 +82,9 @@
     let loading = false;
     const feed = document.getElementById('feed');
     const loadingIndicator = document.getElementById('loadingIndicator');
+    const filtroSelect = document.getElementById("filtro-selecao");
 
-   const links = [
+    const links = [
       "https://www.instagram.com/teacherelza/reel/Cnfut2CKcrZ/",
       "https://www.instagram.com/teacherelza/reel/DOb4W0jj8U5/",
       "https://www.instagram.com/teacherelza/reel/DObS79cDSey/",
@@ -855,89 +866,155 @@
 "https:/www.instagram.com/teacherelza/reel/CaOGm2Hgplr/",
 "https:/www.instagram.com/teacherelza/reel/CaIoewhgONq/",
 "https:/www.instagram.com/teacherelza/reel/CaGApzAArQc/",
-     ];
+    ];
 
-function createCard(idx) {
-  const card = document.createElement('div');
-  card.className = 'card';
-
-  const nome = (idx + 1).toString(); // ID do card
-
-  // 🔹 Imagem
-  const link = document.createElement('a');
-  link.href = links[idx];
-  link.target = "_blank";
-
-  const img = document.createElement('img');
-  img.src = `tub/${nome}.png`; // Caminho da imagem no diretório tub/
-
-  img.onerror = () => {
-    const ph = document.createElement('div');
-    ph.className = 'empty-placeholder';
-    ph.innerText = `tub/${nome}.png (não encontrado)`;
-    link.replaceWith(ph);
-  };
-
-  link.appendChild(img);
-  card.appendChild(link);
-
-  // 🔹 Seletor
-  const select = document.createElement('select');
-  ["", "Relevante", "Irrelevante por hora", "Lixo"].forEach(op => {
-    const o = document.createElement('option');
-    o.value = op;
-    o.textContent = op === "" ? "Selecione..." : op;
-    select.appendChild(o);
-  });
-  card.appendChild(select);
-
-  // 🔹 Campo de comentário
-  const textarea = document.createElement('textarea');
-  textarea.placeholder = "Comentário...";
-  card.appendChild(textarea);
-
-  // 🔹 Botão de enviar
-  const btn = document.createElement('button');
-  btn.textContent = "Enviar";
-  btn.onclick = async () => {
-    const selecao = select.value;
-    const comentario = textarea.value;
-
-    try {
-      await setDoc(doc(collection(db, "Elza"), nome), {
-        nome: nome,
-        link: links[idx],
-        selecao: selecao,
-        comentario: comentario,
-        imagem: `tub/${nome}.png`, // 🔹 Salva caminho da imagem
-        timestamp: new Date()
+    function aplicarFiltro() {
+      const valorFiltro = filtroSelect.value;
+      const cards = feed.querySelectorAll(".card");
+      cards.forEach(card => {
+        const select = card.querySelector("select");
+        if (!valorFiltro || select.value === valorFiltro) {
+          card.style.display = "block";
+        } else {
+          card.style.display = "none";
+        }
       });
-      alert(`Card ${nome} salvo!`);
-    } catch (e) {
-      console.error("Erro ao salvar:", e);
-      alert("Erro ao salvar.");
     }
-  };
-  card.appendChild(btn);
 
-  // 🔹 Recupera dados salvos (se já existir no Firebase)
-  (async () => {
-    const snap = await getDoc(doc(collection(db, "Elza"), nome));
-    if (snap.exists()) {
-      const data = snap.data();
-      if (data.selecao) select.value = data.selecao;
-      if (data.comentario) textarea.value = data.comentario;
+    filtroSelect.addEventListener("change", aplicarFiltro);
+
+    function createCard(idx){
+      const card = document.createElement('article');
+      card.className = 'card';
+      const nome = (idx + 1).toString();
+
+      // Link + imagem
+      const link = document.createElement('a');
+      link.href = links[idx] || '#';
+      link.target = '_blank';
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.src = `tub/${nome}.png`;
+      img.alt = `Thumbnail ${nome}`;
+      link.appendChild(img);
+      card.appendChild(link);
+
+      // Seleção
+      const select = document.createElement('select');
+      select.innerHTML = `
+        <option value="">-- Marcar --</option>
+        <option value="relevante">Relevante</option>
+        <option value="irrelevante">Irrelevante</option>
+        <option value="lixo">Lixo</option>
+      `;
+      select.addEventListener("change", aplicarFiltro);
+
+      // Tag input
+      const textarea = document.createElement('input');
+      textarea.type = "text";
+      textarea.placeholder = "Digite uma tag...";
+      textarea.setAttribute("list", `sugestoes-${nome}`);
+
+      const datalist = document.createElement('datalist');
+      datalist.id = `sugestoes-${nome}`;
+
+      const cadastrarBtn = document.createElement('button');
+      cadastrarBtn.textContent = "Cadastrar Tag";
+      cadastrarBtn.style.display = "none";
+
+      const tagList = document.createElement("div");
+      tagList.className = "tag-list";
+
+      // Atualiza sugestões
+      textarea.addEventListener("input", async () => {
+        const termo = textarea.value.trim();
+        if (!termo) {
+          datalist.innerHTML = "";
+          cadastrarBtn.style.display = "none";
+          return;
+        }
+
+        const q = query(collection(db, "tags"), where("nome", ">=", termo), where("nome", "<=", termo+"\uf8ff"));
+        const snap = await getDocs(q);
+        datalist.innerHTML = "";
+        let existe = false;
+        snap.forEach(docSnap => {
+          const tag = docSnap.data().nome;
+          const opt = document.createElement("option");
+          opt.value = tag;
+          datalist.appendChild(opt);
+          if(tag.toLowerCase() === termo.toLowerCase()) existe = true;
+        });
+        cadastrarBtn.style.display = existe ? "none" : "inline-block";
+      });
+
+      cadastrarBtn.onclick = async () => {
+        const novaTag = textarea.value.trim();
+        if (!novaTag) return alert("Digite uma tag!");
+        try {
+          await addDoc(collection(db, "tags"), { nome: novaTag });
+          alert(`Tag "${novaTag}" cadastrada!`);
+          cadastrarBtn.style.display = "none";
+        } catch(e){ console.error(e); alert("Erro ao cadastrar tag"); }
+      };
+
+      const addTagBtn = document.createElement("button");
+      addTagBtn.textContent = "Adicionar Tag";
+      addTagBtn.onclick = async () => {
+        const novaTag = textarea.value.trim();
+        if (!novaTag) return alert("Digite uma tag!");
+        try {
+          const docRef = doc(collection(db, "Elza"), nome);
+          await setDoc(docRef, { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
+          await updateDoc(docRef, { tags: arrayUnion(novaTag) });
+          const tagEl = document.createElement("span");
+          tagEl.textContent = "#"+novaTag;
+          tagList.appendChild(tagEl);
+          textarea.value = "";
+        } catch(e){ console.error(e); alert("Erro ao adicionar tag"); }
+      };
+
+      const salvarBtn = document.createElement("button");
+      salvarBtn.textContent = "Salvar Card";
+      salvarBtn.onclick = async () => {
+        try {
+          await setDoc(doc(collection(db, "Elza"), nome), { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
+          alert(`Card ${nome} salvo!`);
+          aplicarFiltro();
+        } catch(e){ console.error(e); alert("Erro ao salvar"); }
+      };
+
+      // Carrega dados salvos
+      (async ()=>{
+        const docRef = doc(collection(db,"Elza"),nome);
+        const snap = await getDoc(docRef);
+        if(snap.exists()){
+          const data = snap.data();
+          if(data.selecao) select.value = data.selecao;
+          if(data.tags && data.tags.length>0){
+            data.tags.forEach(t => { const tagEl = document.createElement("span"); tagEl.textContent = "#"+t; tagList.appendChild(tagEl); });
+          }
+        }
+      })();
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+      controls.appendChild(select);
+      controls.appendChild(textarea);
+      controls.appendChild(datalist);
+      controls.appendChild(cadastrarBtn);
+      controls.appendChild(addTagBtn);
+      controls.appendChild(salvarBtn);
+      controls.appendChild(tagList);
+
+      card.appendChild(controls);
+      return card;
     }
-  })();
-
-  return card;
-}
-
 
     function loadBatch(){
       if(loading) return;
       loading = true;
-      loadingIndicator.style.display = 'flex';
+      loadingIndicator.style.display='flex';
       feed.setAttribute('aria-busy','true');
 
       setTimeout(()=>{
@@ -948,22 +1025,18 @@ function createCard(idx) {
           nextIndex++;
         }
         loading = false;
-        loadingIndicator.style.display = 'none';
+        loadingIndicator.style.display='none';
         feed.setAttribute('aria-busy','false');
-      }, 300 + Math.random()*400);
+        aplicarFiltro();
+      },300+Math.random()*400);
     }
 
     loadBatch();
-
-    window.addEventListener('scroll', ()=>{
-      const scrolled = window.scrollY + window.innerHeight;
-      const nearBottom = scrolled > document.body.offsetHeight - 800;
-      if(nearBottom && !loading){
-        loadBatch();
-      }
+    window.addEventListener('scroll',()=>{
+      const scrolled = window.scrollY+window.innerHeight;
+      if(scrolled>document.body.offsetHeight-800 && !loading) loadBatch();
     });
-
-    window.addEventListener('keydown', (e)=>{ if(e.key === 'n') loadBatch(); });
+    window.addEventListener('keydown',(e)=>{ if(e.key==='n') loadBatch(); });
   </script>
 </body>
 </html>
