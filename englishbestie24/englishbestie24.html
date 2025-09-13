@@ -1,0 +1,499 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Clone Instagram - Desktop (grid 4 por linha)</title>
+  <style>
+    :root{--bg:#fafafa;--card:#fff;--muted:#8e8e8e;--accent:#0095f6}
+    html,body{height:100%;margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial;background:var(--bg);color:#111}
+    header{height:66px;background:#fff;border-bottom:1px solid #dbdbdb;display:flex;align-items:center;justify-content:space-between;padding:0 24px;position:sticky;top:0;z-index:10}
+    .brand{display:flex;align-items:center;gap:16px}
+    .brand h1{font-family:'Grand Hotel',cursive;font-size:30px;margin:0}
+    .search{width:300px;display:flex;align-items:center;gap:12px;}
+    .container{max-width:980px;margin:28px auto;}
+    .grid{display:grid;grid-template-columns:repeat(4,1fr);gap:24px}
+    .card{background:var(--card);border:1px solid #dbdbdb;border-radius:3px;padding:8px;box-shadow:0 1px 0 rgba(0,0,0,0.02)}
+    .thumb{width:100%;aspect-ratio:319/486;object-fit:cover;border-radius:2px;display:block;background:#efefef}
+    .controls{margin-top:8px;display:flex;flex-direction:column;gap:8px}
+    select, input, button{font-size:14px}
+    select{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px;background:#fff}
+    input[type="text"]{width:100%;padding:8px;border:1px solid #ccc;border-radius:4px}
+    button{align-self:flex-end;padding:8px 12px;border-radius:4px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+    .tag-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+    .tag-list span{background:#eee;padding:4px 8px;border-radius:12px;font-size:12px}
+    .loading{display:flex;align-items:center;justify-content:center;padding:16px;color:var(--muted)}
+    @media(min-width:1180px){.page{display:block};.container{max-width:100%;margin:28px;}}
+    @media(max-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
+    @media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}}
+    @media(max-width:460px){.grid{grid-template-columns:repeat(1,1fr)}}
+    .spinner{width:28px;height:28px;border-radius:50%;border:4px solid #e9e9e9;border-top-color:var(--muted);animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand"><h1>Instagram</h1></div>
+    <div class="search">
+      <input type="search" placeholder="Pesquisar" style="width:200px;padding:8px;border-radius:6px;border:1px solid #dbdbdb">
+      <select id="filtro-selecao" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
+        <option value="">-- Todos --</option>
+        <option value="relevante">Relevante</option>
+        <option value="irrelevante">Irrelevante</option>
+        <option value="lixo">Lixo</option>
+      </select>
+    </div>
+    <nav style="display:flex;gap:12px;align-items:center">
+      <button aria-label="Novo" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Novo</button>
+      <button aria-label="Perfil" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Perfil</button>
+    </nav>
+  </header>
+
+  <main class="container page">
+    <section id="feed" class="grid" aria-live="polite" aria-busy="false"></section>
+  </main>
+
+  <div id="loadingIndicator" class="loading" style="display:none">
+    <div class="spinner" aria-hidden="true"></div>
+    <span style="margin-left:8px">Carregando...</span>
+  </div>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
+    import { 
+      getFirestore, collection, doc, setDoc, getDoc, addDoc, query, where, getDocs, updateDoc, arrayUnion 
+    } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyCNgDqkqhsFQY7bfrWK2_VPtGUoEyyIBq4",
+      authDomain: "trechos-c7fba.firebaseapp.com",
+      projectId: "trechos-c7fba",
+      storageBucket: "trechos-c7fba.appspot.com",
+      messagingSenderId: "334052038527",
+      appId: "1:334052038527:web:797e8967eaef7b198a2c4a",
+      measurementId: "G-FL2Q1KLJMT"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+
+    const BATCH = 12;
+    let nextIndex = 0;
+    let loading = false;
+    const feed = document.getElementById('feed');
+    const loadingIndicator = document.getElementById('loadingIndicator');
+    const filtroSelect = document.getElementById("filtro-selecao");
+
+    const links = [
+    "https:/instagram.com/englishbestie24/reel/DOiUXj_jQVp/",
+"https:/instagram.com/englishbestie24/reel/DOdh2QuDZEk/",
+"https:/instagram.com/englishbestie24/reel/DObHyyFjfPg/",
+"https:/instagram.com/englishbestie24/reel/DOY5YhDjYgP/",
+"https:/instagram.com/englishbestie24/reel/DOQVaSpDaJO/",
+"https:/instagram.com/englishbestie24/reel/DONwMPeja4q/",
+"https:/instagram.com/englishbestie24/reel/DOJMOZ6De1O/",
+"https:/instagram.com/englishbestie24/reel/DOGSk1HDdgK/",
+"https:/instagram.com/englishbestie24/reel/DOEB8Qrjdkt/",
+"https:/instagram.com/englishbestie24/reel/DOBQ1p9DQoj/",
+"https:/instagram.com/englishbestie24/reel/DN8V8MoiN6N/",
+"https:/instagram.com/englishbestie24/reel/DNl7Xrisi_n/",
+"https:/instagram.com/englishbestie24/reel/DN501bzjSZg/",
+"https:/instagram.com/englishbestie24/reel/DN2-s5ZWnsD/",
+"https:/instagram.com/englishbestie24/reel/DNxRZJrWtra/",
+"https:/instagram.com/englishbestie24/reel/DNvQYK9WiMx/",
+"https:/instagram.com/englishbestie24/reel/DNbzvA0s4pD/",
+"https:/instagram.com/englishbestie24/reel/DNnZ7urM3Bh/",
+"https:/instagram.com/englishbestie24/reel/DNVqlsjssvR/",
+"https:/instagram.com/englishbestie24/reel/DNlOuk6sKcL/",
+"https:/instagram.com/englishbestie24/reel/DNiTOCHsT-G/",
+"https:/instagram.com/englishbestie24/reel/DNgH3d8sksL/",
+"https:/instagram.com/englishbestie24/reel/DNeNB1PMt5b/",
+"https:/instagram.com/englishbestie24/reel/DNb0Aa0se_H/",
+"https:/instagram.com/englishbestie24/reel/DNBVaRzM4RJ/",
+"https:/instagram.com/englishbestie24/reel/DNaSwztsvZ8/",
+"https:/instagram.com/englishbestie24/reel/DNYEVmMuVk5/",
+"https:/instagram.com/englishbestie24/reel/DNXoymuCz5F/",
+"https:/instagram.com/englishbestie24/reel/DNWv1Ovs_8B/",
+"https:/instagram.com/englishbestie24/reel/DNVmxakMP_A/",
+"https:/instagram.com/englishbestie24/reel/DMpWJLBMwZt/",
+"https:/instagram.com/englishbestie24/reel/DNSYTN5MndY/",
+"https:/instagram.com/englishbestie24/reel/DNDLBONMZgC/",
+"https:/instagram.com/englishbestie24/reel/DNQlMpCMiAx/",
+"https:/instagram.com/englishbestie24/reel/DNNp6joM2cH/",
+"https:/instagram.com/englishbestie24/reel/DNNWO2TsYlc/",
+"https:/instagram.com/englishbestie24/reel/DNJCLi_srQM/",
+"https:/instagram.com/englishbestie24/reel/DM-Ac8fsnQW/",
+"https:/instagram.com/englishbestie24/reel/DNGxPB-sPLf/",
+"https:/instagram.com/englishbestie24/reel/DM24YaAsOGM/",
+"https:/instagram.com/englishbestie24/reel/DNDrO51sUCr/",
+"https:/instagram.com/englishbestie24/reel/DNDJoYlMxFp/",
+"https:/instagram.com/englishbestie24/reel/DNAnYvyspvW/",
+"https:/instagram.com/englishbestie24/reel/DM-mWEVoPoM/",
+"https:/instagram.com/englishbestie24/reel/DM1LZXQteWq/",
+"https:/instagram.com/englishbestie24/reel/DM7OiLusSkl/",
+"https:/instagram.com/englishbestie24/reel/DMvOhfGsX54/",
+"https:/instagram.com/englishbestie24/reel/DM47oPiM3z6/",
+"https:/instagram.com/englishbestie24/reel/DM2cRgrMlNV/",
+"https:/instagram.com/englishbestie24/reel/DMUoGv3sV8f/",
+"https:/instagram.com/englishbestie24/reel/DM0dRZGMTrm/",
+"https:/instagram.com/englishbestie24/reel/DMxPm0XsKD-/",
+"https:/instagram.com/englishbestie24/reel/DMYUGeUMn4Q/",
+"https:/instagram.com/englishbestie24/reel/DMuyc4zsZuV/",
+"https:/instagram.com/englishbestie24/reel/DMkysCTswKa/",
+"https:/instagram.com/englishbestie24/reel/DMq8lkIIEDU/",
+"https:/instagram.com/englishbestie24/reel/DMp4Q3-MbCQ/",
+"https:/instagram.com/englishbestie24/reel/DMnsHqOMTED/",
+"https:/instagram.com/englishbestie24/reel/DMnJj6kM6aD/",
+"https:/instagram.com/englishbestie24/reel/DMcvMQNMw_r/",
+"https:/instagram.com/englishbestie24/reel/DMkqgPzsao_/",
+"https:/instagram.com/englishbestie24/reel/DMbgHfOI7Pn/",
+"https:/instagram.com/englishbestie24/reel/DMhmtg6s7EN/",
+"https:/instagram.com/englishbestie24/reel/DMgRU0LuqOq/",
+"https:/instagram.com/englishbestie24/reel/DMc90k_MlTP/",
+"https:/instagram.com/englishbestie24/reel/DMbf2KpoFjZ/",
+"https:/instagram.com/englishbestie24/reel/DMZ6uJYN8jF/",
+"https:/instagram.com/englishbestie24/reel/DMYU8Hls7wh/",
+"https:/instagram.com/englishbestie24/reel/DMXZGMRMJoG/",
+"https:/instagram.com/englishbestie24/reel/DMUnjYps7_X/",
+"https:/instagram.com/englishbestie24/reel/DMNFGAhs2TD/",
+"https:/instagram.com/englishbestie24/reel/DMKv0K4sENd/",
+"https:/instagram.com/englishbestie24/reel/DMJCQqdudOl/",
+"https:/instagram.com/englishbestie24/reel/DMJB_f8OVXB/",
+"https:/instagram.com/englishbestie24/reel/DMGiKX5OqSL/",
+"https:/instagram.com/englishbestie24/reel/DMGhh14uIJy/",
+"https:/instagram.com/englishbestie24/reel/DMFk5fxMsja/",
+"https:/instagram.com/englishbestie24/reel/DMFV_WgsiUo/",
+"https:/instagram.com/englishbestie24/reel/DMDHtIvMXUi/",
+"https:/instagram.com/englishbestie24/reel/DL9iHSUs-6o/",
+"https:/instagram.com/englishbestie24/reel/DL9gi_2sRM7/",
+"https:/instagram.com/englishbestie24/reel/DL7llYPMgxc/",
+"https:/instagram.com/englishbestie24/reel/DL7FNTnsEvz/",
+"https:/instagram.com/englishbestie24/reel/DL4bkRksxG3/",
+"https:/instagram.com/englishbestie24/reel/DL3WFSyovWk/",
+"https:/instagram.com/englishbestie24/reel/DL2r8-6MZhT/",
+"https:/instagram.com/englishbestie24/reel/DL19i-3ssu4/",
+"https:/instagram.com/englishbestie24/reel/DL0VwCys0JA/",
+"https:/instagram.com/englishbestie24/reel/DLyNIOJoY-x/",
+"https:/instagram.com/englishbestie24/reel/DLyM71boBLe/",
+"https:/instagram.com/englishbestie24/reel/DLw2CpEMUO6/",
+"https:/instagram.com/englishbestie24/reel/DLpSo-qMA_V/",
+"https:/instagram.com/englishbestie24/reel/DLpSRmhMPE8/",
+"https:/instagram.com/englishbestie24/reel/DLnKLeHMeOz/",
+"https:/instagram.com/englishbestie24/reel/DLlAUBbO6ms/",
+"https:/instagram.com/englishbestie24/reel/DLkEDHHsKOX/",
+"https:/instagram.com/englishbestie24/reel/DLkDuAes5Ap/",
+"https:/instagram.com/englishbestie24/reel/DLhxJ-NMgCo/",
+"https:/instagram.com/englishbestie24/reel/DLhYncPsHUY/",
+"https:/instagram.com/englishbestie24/reel/DLfBWJ_MMOV/",
+"https:/instagram.com/englishbestie24/reel/DLfBMCfs1XG/",
+"https:/instagram.com/englishbestie24/reel/DLc2DyBs_vv/",
+"https:/instagram.com/englishbestie24/reel/DLIDeXesMUa/",
+"https:/instagram.com/englishbestie24/reel/DLK4h5bsZkT/",
+"https:/instagram.com/englishbestie24/reel/DLFPfirMfPA/",
+"https:/instagram.com/englishbestie24/reel/DK9UtaMMC7O/",
+"https:/instagram.com/englishbestie24/reel/DK-nmh0sgG2/",
+"https:/instagram.com/englishbestie24/reel/DK7dPC-Mb2C/",
+"https:/instagram.com/englishbestie24/reel/DK8NSE-IFrH/",
+"https:/instagram.com/englishbestie24/reel/DK4Vx58soEH/",
+"https:/instagram.com/englishbestie24/reel/DK2F42hM2Qy/",
+"https:/instagram.com/englishbestie24/reel/DKz1gOPM2yP/",
+"https:/instagram.com/englishbestie24/reel/DKy8GmSsLtr/",
+"https:/instagram.com/englishbestie24/reel/DKtyu9iMnpJ/",
+"https:/instagram.com/englishbestie24/reel/DKrjVSQsYps/",
+"https:/instagram.com/englishbestie24/reel/DKpdhEPMP2N/",
+"https:/instagram.com/englishbestie24/reel/DKojyi2MW81/",
+"https:/instagram.com/englishbestie24/reel/DKmRR1HMT8C/",
+"https:/instagram.com/englishbestie24/reel/DKgq1dasyb0/",
+"https:/instagram.com/englishbestie24/reel/DKfkENYMezK/",
+"https:/instagram.com/englishbestie24/reel/DKeiSeAMdqi/",
+"https:/instagram.com/englishbestie24/reel/DKeg2Mlsbdf/",
+"https:/instagram.com/englishbestie24/reel/DKeZKuzsE63/",
+"https:/instagram.com/englishbestie24/reel/DKcFEmuMERR/",
+"https:/instagram.com/englishbestie24/reel/DKbzx0IMoAS/",
+"https:/instagram.com/englishbestie24/reel/DKaOZt6OKvT/",
+"https:/instagram.com/englishbestie24/reel/DKZQHgGsTfo/",
+"https:/instagram.com/englishbestie24/reel/DKWke-zMwjT/",
+"https:/instagram.com/englishbestie24/reel/DKUB_iUsz15/",
+"https:/instagram.com/englishbestie24/reel/DKRhxzWsubg/",
+"https:/instagram.com/englishbestie24/reel/DKO87n6s2wQ/",
+"https:/instagram.com/englishbestie24/reel/DKMYI8csV4m/",
+"https:/instagram.com/englishbestie24/reel/DKK8gR6u2jq/",
+"https:/instagram.com/englishbestie24/reel/DKJzZOPsuB6/",
+"https:/instagram.com/englishbestie24/reel/DKHOkFvsmDG/",
+"https:/instagram.com/englishbestie24/reel/DKEvj6ZMMrB/",
+"https:/instagram.com/englishbestie24/reel/DKCAoT3sa0J/",
+"https:/instagram.com/englishbestie24/reel/DJ_ih-sskN6/",
+"https:/instagram.com/englishbestie24/reel/DJ8uJYHstep/",
+"https:/instagram.com/englishbestie24/reel/DIgoHCnsl5X/",
+"https:/instagram.com/englishbestie24/reel/DId545xsaFn/",
+"https:/instagram.com/englishbestie24/reel/DIbjPX9skom/",
+"https:/instagram.com/englishbestie24/reel/DIWU11wMANv/",
+"https:/instagram.com/englishbestie24/reel/DIUFZFisVB-/",
+"https:/instagram.com/englishbestie24/reel/DIRGwUvMWU7/",
+"https:/instagram.com/englishbestie24/reel/DIOEOhYM0pB/",
+"https:/instagram.com/englishbestie24/reel/DII9ZuAMMKR/",
+"https:/instagram.com/englishbestie24/reel/DIGobDKMB88/",
+"https:/instagram.com/englishbestie24/reel/DIDv04-Mawl/",
+"https:/instagram.com/englishbestie24/reel/DIBK41BMnX2/",
+"https:/instagram.com/englishbestie24/reel/DH_H23WMyT2/",
+"https:/instagram.com/englishbestie24/reel/DH9BTM9sSXJ/",
+"https:/instagram.com/englishbestie24/reel/DH8_LqosmU9/",
+"https:/instagram.com/englishbestie24/reel/DH8-JUYskDh/",
+"https:/instagram.com/englishbestie24/reel/DH0zNAPMKYz/",
+"https:/instagram.com/englishbestie24/reel/DHvq3atM8kI/",
+"https:/instagram.com/englishbestie24/reel/DHsu6faMu4X/",
+"https:/instagram.com/englishbestie24/reel/DHV71fluVDG/",
+"https:/instagram.com/englishbestie24/reel/DHTHR_Msm1c/",
+"https:/instagram.com/englishbestie24/reel/DHQxU5ZsV0H/",
+"https:/instagram.com/englishbestie24/reel/DHLtlQ1MwGn/",
+"https:/instagram.com/englishbestie24/reel/DHI7NpdscU2/",
+"https:/instagram.com/englishbestie24/reel/DHGLiH5ME03/",
+"https:/instagram.com/englishbestie24/reel/DHDqpBhMyQj/",
+"https:/instagram.com/englishbestie24/reel/DHDqRPWshP_/",
+"https:/instagram.com/englishbestie24/reel/DHBHf5CsdPr/",
+"https:/instagram.com/englishbestie24/reel/DHBHOFtsvkd/",
+"https:/instagram.com/englishbestie24/reel/DG-rcdVsX15/",
+"https:/instagram.com/englishbestie24/reel/DG7wXZpsGA1/",
+"https:/instagram.com/englishbestie24/reel/DG5n5MesBv8/",
+"https:/instagram.com/englishbestie24/reel/DG3G1ZdObTc/",
+"https:/instagram.com/englishbestie24/reel/DG3D8yjOGWG/",
+"https:/instagram.com/englishbestie24/reel/DG0cyqEsREM/",
+"https:/instagram.com/englishbestie24/reel/DG0cmbrMbSA/",
+"https:/instagram.com/englishbestie24/reel/DGfOIvHuUB8/",
+"https:/instagram.com/englishbestie24/reel/DGaaeXBuWUv/",
+"https:/instagram.com/englishbestie24/reel/DGYD3yEsUih/",
+"https:/instagram.com/englishbestie24/reel/DGSqRKnOMF0/",
+"https:/instagram.com/englishbestie24/reel/DGRLkgoObXf/",
+"https:/instagram.com/englishbestie24/reel/DGLR7amMOsT/",
+"https:/instagram.com/englishbestie24/reel/DGI1IPLsw1J/",
+"https:/instagram.com/englishbestie24/reel/DDeoi-Vs0Fi/",
+"https:/instagram.com/englishbestie24/reel/DDQRSRzMJ4w/",
+"https:/instagram.com/englishbestie24/reel/DDKE0nBuh3e/",
+"https:/instagram.com/englishbestie24/reel/DC_gB6zuyq8/",
+"https:/instagram.com/englishbestie24/reel/DC3zxzYOo3T/",
+"https:/instagram.com/englishbestie24/reel/DC1wQPHssPd/",
+"https:/instagram.com/englishbestie24/reel/DCrTLPxM-zU/",
+"https:/instagram.com/englishbestie24/reel/DCoyGA3MuYu/",
+"https:/instagram.com/englishbestie24/reel/DCjatOZuw_o/",
+"https:/instagram.com/englishbestie24/reel/DChQiBZOGGh/",
+"https:/instagram.com/englishbestie24/reel/DCetinTuANT/",
+"https:/instagram.com/englishbestie24/reel/DCXAF9Xu2HY/",
+"https:/instagram.com/englishbestie24/reel/DCUYM52OpJY/",
+"https:/instagram.com/englishbestie24/reel/DB4CST6MNsT/",
+"https:/instagram.com/englishbestie24/reel/DBv8MqSMOt5/",
+"https:/instagram.com/englishbestie24/reel/DBgxP0nMGAU/",
+"https:/instagram.com/englishbestie24/reel/DBgP86vuaQK/",
+"https:/instagram.com/englishbestie24/reel/DAtLIsCszxa/",
+"https:/instagram.com/englishbestie24/reel/DAp8kYMOJBS/",
+"https:/instagram.com/englishbestie24/reel/C_YGBfXOrCx/",
+"https:/instagram.com/englishbestie24/reel/C_YFXyju9lt/",
+"https:/instagram.com/englishbestie24/reel/C_VxAzHu7R5/",
+"https:/instagram.com/englishbestie24/reel/C_LWQ7YMABL/",
+"https:/instagram.com/englishbestie24/reel/C_IYYktuiQq/",
+"https:/instagram.com/englishbestie24/reel/C_F2oRDOBuD/",
+"https:/instagram.com/englishbestie24/reel/C_AuIITu2b5/",
+"https:/instagram.com/englishbestie24/reel/C--Yqo0MVbl/",
+"https:/instagram.com/englishbestie24/reel/C-7ghMXOnM4/",
+"https:/instagram.com/englishbestie24/reel/C-40Q5Lu-fm/",
+"https:/instagram.com/englishbestie24/reel/C-3HFW-OViT/",
+"https:/instagram.com/englishbestie24/reel/C9KT0jsMkto/",
+"https:/instagram.com/englishbestie24/reel/C9Hnc-euhaE/",
+"https:/instagram.com/englishbestie24/reel/C9DQKaXsoaj/",
+"https:/instagram.com/englishbestie24/reel/C87H1kKsmuJ/",
+"https:/instagram.com/englishbestie24/reel/C87DTQHs7eZ/",
+"https:/instagram.com/englishbestie24/reel/C85Pxi9uVJA/",
+"https:/instagram.com/englishbestie24/reel/C82TuEjsNcE/",
+"https:/instagram.com/englishbestie24/reel/C81iWuAugF8/",
+"https:/instagram.com/englishbestie24/reel/C8wYVdBsPN_/",
+"https:/instagram.com/englishbestie24/reel/C8wOkN-s8PW/",
+"https:/instagram.com/englishbestie24/reel/C8t19-sM4Qe/",
+"https:/instagram.com/englishbestie24/reel/C8rmRmyMEtX/",
+"https:/instagram.com/englishbestie24/reel/C8pkWACM6FP/",
+"https:/instagram.com/englishbestie24/reel/C8pBxgwM_Iu/",
+"https:/instagram.com/englishbestie24/reel/C8hAQSmsUzr/",
+"https:/instagram.com/englishbestie24/reel/C8ebyF2sPQT/",
+"https:/instagram.com/englishbestie24/reel/C8dIf9wqOAs/",
+"https:/instagram.com/englishbestie24/reel/C8cHD3JMwo9/",
+"https:/instagram.com/englishbestie24/reel/C8T-5V4sjeY/",
+"https:/instagram.com/englishbestie24/reel/C8ShRBUOSJ8/",
+"https:/instagram.com/englishbestie24/reel/C8SXOUZuoEV/",
+"https:/instagram.com/englishbestie24/reel/C6EECPAsGgO/",
+"https:/instagram.com/englishbestie24/reel/C5W2PpOiYkz/",
+"https:/instagram.com/englishbestie24/reel/C4ve1u9NIyh/",
+"https:/instagram.com/englishbestie24/reel/C4q7obINIK0/"
+ 
+
+    ];
+
+    function aplicarFiltro() {
+      const valorFiltro = filtroSelect.value;
+      const cards = feed.querySelectorAll(".card");
+      cards.forEach(card => {
+        const select = card.querySelector("select");
+        if (!valorFiltro || select.value === valorFiltro) {
+          card.style.display = "block";
+        } else {
+          card.style.display = "none";
+        }
+      });
+    }
+
+    filtroSelect.addEventListener("change", aplicarFiltro);
+
+    function createCard(idx){
+      const card = document.createElement('article');
+      card.className = 'card';
+      const nome = (idx + 1).toString();
+
+      // Link + imagem
+      const link = document.createElement('a');
+      link.href = links[idx] || '#';
+      link.target = '_blank';
+      const img = document.createElement('img');
+      img.className = 'thumb';
+      img.src = `tub/${nome}.png`;
+      img.alt = `Thumbnail ${nome}`;
+      link.appendChild(img);
+      card.appendChild(link);
+
+      // Seleção
+      const select = document.createElement('select');
+      select.innerHTML = `
+        <option value="">-- Marcar --</option>
+        <option value="relevante">Relevante</option>
+        <option value="irrelevante">Irrelevante</option>
+        <option value="lixo">Lixo</option>
+      `;
+      select.addEventListener("change", aplicarFiltro);
+
+      // Tag input
+      const textarea = document.createElement('input');
+      textarea.type = "text";
+      textarea.placeholder = "Digite uma tag...";
+      textarea.setAttribute("list", `sugestoes-${nome}`);
+
+      const datalist = document.createElement('datalist');
+      datalist.id = `sugestoes-${nome}`;
+
+      const cadastrarBtn = document.createElement('button');
+      cadastrarBtn.textContent = "Cadastrar Tag";
+      cadastrarBtn.style.display = "none";
+
+      const tagList = document.createElement("div");
+      tagList.className = "tag-list";
+
+      // Atualiza sugestões
+      textarea.addEventListener("input", async () => {
+        const termo = textarea.value.trim();
+        if (!termo) {
+          datalist.innerHTML = "";
+          cadastrarBtn.style.display = "none";
+          return;
+        }
+
+        const q = query(collection(db, "tags"), where("nome", ">=", termo), where("nome", "<=", termo+"\uf8ff"));
+        const snap = await getDocs(q);
+        datalist.innerHTML = "";
+        let existe = false;
+        snap.forEach(docSnap => {
+          const tag = docSnap.data().nome;
+          const opt = document.createElement("option");
+          opt.value = tag;
+          datalist.appendChild(opt);
+          if(tag.toLowerCase() === termo.toLowerCase()) existe = true;
+        });
+        cadastrarBtn.style.display = existe ? "none" : "inline-block";
+      });
+
+      cadastrarBtn.onclick = async () => {
+        const novaTag = textarea.value.trim();
+        if (!novaTag) return alert("Digite uma tag!");
+        try {
+          await addDoc(collection(db, "tags"), { nome: novaTag });
+          alert(`Tag "${novaTag}" cadastrada!`);
+          cadastrarBtn.style.display = "none";
+        } catch(e){ console.error(e); alert("Erro ao cadastrar tag"); }
+      };
+
+      const addTagBtn = document.createElement("button");
+      addTagBtn.textContent = "Adicionar Tag";
+      addTagBtn.onclick = async () => {
+        const novaTag = textarea.value.trim();
+        if (!novaTag) return alert("Digite uma tag!");
+        try {
+          const docRef = doc(collection(db, "Elza"), nome);
+          await setDoc(docRef, { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
+          await updateDoc(docRef, { tags: arrayUnion(novaTag) });
+          const tagEl = document.createElement("span");
+          tagEl.textContent = "#"+novaTag;
+          tagList.appendChild(tagEl);
+          textarea.value = "";
+        } catch(e){ console.error(e); alert("Erro ao adicionar tag"); }
+      };
+
+      const salvarBtn = document.createElement("button");
+      salvarBtn.textContent = "Salvar Card";
+      salvarBtn.onclick = async () => {
+        try {
+          await setDoc(doc(collection(db, "Elza"), nome), { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
+          alert(`Card ${nome} salvo!`);
+          aplicarFiltro();
+        } catch(e){ console.error(e); alert("Erro ao salvar"); }
+      };
+
+      // Carrega dados salvos
+      (async ()=>{
+        const docRef = doc(collection(db,"Elza"),nome);
+        const snap = await getDoc(docRef);
+        if(snap.exists()){
+          const data = snap.data();
+          if(data.selecao) select.value = data.selecao;
+          if(data.tags && data.tags.length>0){
+            data.tags.forEach(t => { const tagEl = document.createElement("span"); tagEl.textContent = "#"+t; tagList.appendChild(tagEl); });
+          }
+        }
+      })();
+
+      const controls = document.createElement("div");
+      controls.className = "controls";
+      controls.appendChild(select);
+      controls.appendChild(textarea);
+      controls.appendChild(datalist);
+      controls.appendChild(cadastrarBtn);
+      controls.appendChild(addTagBtn);
+      controls.appendChild(salvarBtn);
+      controls.appendChild(tagList);
+
+      card.appendChild(controls);
+      return card;
+    }
+
+    function loadBatch(){
+      if(loading) return;
+      loading = true;
+      loadingIndicator.style.display='flex';
+      feed.setAttribute('aria-busy','true');
+
+      setTimeout(()=>{
+        for(let i=0;i<BATCH;i++){
+          if(nextIndex >= links.length) break;
+          const card = createCard(nextIndex);
+          feed.appendChild(card);
+          nextIndex++;
+        }
+        loading = false;
+        loadingIndicator.style.display='none';
+        feed.setAttribute('aria-busy','false');
+        aplicarFiltro();
+      },300+Math.random()*400);
+    }
+
+    loadBatch();
+    window.addEventListener('scroll',()=>{
+      const scrolled = window.scrollY+window.innerHeight;
+      if(scrolled>document.body.offsetHeight-800 && !loading) loadBatch();
+    });
+    window.addEventListener('keydown',(e)=>{ if(e.key==='n') loadBatch(); });
+  </script>
+</body>
+</html>
