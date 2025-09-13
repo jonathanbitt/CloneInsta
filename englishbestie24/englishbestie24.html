@@ -85,7 +85,7 @@
     const filtroSelect = document.getElementById("filtro-selecao");
 
     const links = [
-    "https:/instagram.com/englishbestie24/reel/DOiUXj_jQVp/",
+"https:/instagram.com/englishbestie24/reel/DOiUXj_jQVp/",
 "https:/instagram.com/englishbestie24/reel/DOdh2QuDZEk/",
 "https:/instagram.com/englishbestie24/reel/DObHyyFjfPg/",
 "https:/instagram.com/englishbestie24/reel/DOY5YhDjYgP/",
@@ -320,8 +320,7 @@
 "https:/instagram.com/englishbestie24/reel/C6EECPAsGgO/",
 "https:/instagram.com/englishbestie24/reel/C5W2PpOiYkz/",
 "https:/instagram.com/englishbestie24/reel/C4ve1u9NIyh/",
-"https:/instagram.com/englishbestie24/reel/C4q7obINIK0/"
- 
+"https:/instagram.com/englishbestie24/reel/C4q7obINIK0/",
 
     ];
 
@@ -421,7 +420,7 @@
         const novaTag = textarea.value.trim();
         if (!novaTag) return alert("Digite uma tag!");
         try {
-          const docRef = doc(collection(db, "Elza"), nome);
+          const docRef = doc(collection(db, "englishbestie24"), nome); // <-- ALTERADO
           await setDoc(docRef, { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
           await updateDoc(docRef, { tags: arrayUnion(novaTag) });
           const tagEl = document.createElement("span");
@@ -435,7 +434,7 @@
       salvarBtn.textContent = "Salvar Card";
       salvarBtn.onclick = async () => {
         try {
-          await setDoc(doc(collection(db, "Elza"), nome), { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
+          await setDoc(doc(collection(db, "englishbestie24"), nome), { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true}); // <-- ALTERADO
           alert(`Card ${nome} salvo!`);
           aplicarFiltro();
         } catch(e){ console.error(e); alert("Erro ao salvar"); }
@@ -443,13 +442,17 @@
 
       // Carrega dados salvos
       (async ()=>{
-        const docRef = doc(collection(db,"Elza"),nome);
+        const docRef = doc(collection(db,"englishbestie24"),nome); // <-- ALTERADO
         const snap = await getDoc(docRef);
         if(snap.exists()){
           const data = snap.data();
           if(data.selecao) select.value = data.selecao;
           if(data.tags && data.tags.length>0){
-            data.tags.forEach(t => { const tagEl = document.createElement("span"); tagEl.textContent = "#"+t; tagList.appendChild(tagEl); });
+            data.tags.forEach(t => { 
+              const tagEl = document.createElement("span"); 
+              tagEl.textContent = "#"+t; 
+              tagList.appendChild(tagEl); 
+            });
           }
         }
       })();
@@ -489,10 +492,7 @@
     }
 
     loadBatch();
-    window.addEventListener('scroll',()=>{
-      const scrolled = window.scrollY+window.innerHeight;
-      if(scrolled>document.body.offsetHeight-800 && !loading) loadBatch();
-    });
+    window.addEventListener('scroll',()=>{ const scrolled = window.scrollY+window.innerHeight; if(scrolled>document.body.offsetHeight-800 && !loading) loadBatch(); });
     window.addEventListener('keydown',(e)=>{ if(e.key==='n') loadBatch(); });
   </script>
 </body>
