@@ -36,12 +36,14 @@
     <div class="brand"><h1>Instagram</h1></div>
     <div class="search">
       <input type="search" placeholder="Pesquisar" style="width:200px;padding:8px;border-radius:6px;border:1px solid #dbdbdb">
-      <select id="filtro-selecao" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
-        <option value="">-- Todos --</option>
-        <option value="relevante">Relevante</option>
-        <option value="irrelevante">Irrelevante</option>
-        <option value="lixo">Lixo</option>
-      </select>
+    <select id="filtro-selecao" style="padding:6px;border-radius:6px;border:1px solid #ccc;">
+  <option value="">-- Todos --</option>
+  <option value="nao-classificado">Não Classificado</option>
+  <option value="relevante">Relevante</option>
+  <option value="irrelevante">Irrelevante</option>
+  <option value="lixo">Lixo</option>
+  <option value="utilizado">Utilizado</option>
+</select>
     </div>
     <nav style="display:flex;gap:12px;align-items:center">
       <button aria-label="Novo" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Novo</button>
@@ -869,147 +871,221 @@
     ];
 
     function aplicarFiltro() {
-      const valorFiltro = filtroSelect.value;
-      const cards = feed.querySelectorAll(".card");
-      cards.forEach(card => {
-        const select = card.querySelector("select");
-        if (!valorFiltro || select.value === valorFiltro) {
-          card.style.display = "block";
-        } else {
-          card.style.display = "none";
-        }
-      });
+  const valorFiltro = filtroSelect.value;
+  const cards = feed.querySelectorAll(".card");
+  
+  cards.forEach(card => {
+    const select = card.querySelector("select");
+    const selectValue = select.value;
+    
+    switch(valorFiltro) {
+      case "nao-classificado":
+        card.style.display = (selectValue === "" || selectValue === "-- Marcar --") ? "block" : "none";
+        break;
+      case "":
+        card.style.display = "block"; // Todos
+        break;
+      default:
+        card.style.display = selectValue === valorFiltro ? "block" : "none";
     }
+  });
+}
 
     filtroSelect.addEventListener("change", aplicarFiltro);
 
-    function createCard(idx){
-      const card = document.createElement('article');
-      card.className = 'card';
-      const nome = (idx + 1).toString();
+    function createCard(idx) {
+  const card = document.createElement('article');
+  card.className = 'card';
+  const nome = (idx + 1).toString();
 
-      // Link + imagem
-      const link = document.createElement('a');
-      link.href = links[idx] || '#';
-      link.target = '_blank';
-      const img = document.createElement('img');
-      img.className = 'thumb';
-      img.src = `tub/${nome}.png`;
-      img.alt = `Thumbnail ${nome}`;
-      link.appendChild(img);
-      card.appendChild(link);
+  // Container para a imagem e o número
+  const imageContainer = document.createElement('div');
+  imageContainer.style.position = 'relative';
+  imageContainer.style.display = 'inline-block';
 
-      // Seleção
-      const select = document.createElement('select');
-      select.innerHTML = `
-        <option value="">-- Marcar --</option>
-        <option value="relevante">Relevante</option>
-        <option value="irrelevante">Irrelevante</option>
-        <option value="lixo">Lixo</option>
-      `;
-      select.addEventListener("change", aplicarFiltro);
+  // Link + imagem
+  const link = document.createElement('a');
+  link.href = links[idx] || '#';
+  link.target = '_blank';
 
-      // Tag input
-      const textarea = document.createElement('input');
-      textarea.type = "text";
-      textarea.placeholder = "Digite uma tag...";
-      textarea.setAttribute("list", `sugestoes-${nome}`);
+  const img = document.createElement('img');
+  img.className = 'thumb';
+  img.src = `tub/${nome}.png`;
+  img.alt = `Thumbnail ${nome}`;
+  link.appendChild(img);
 
-      const datalist = document.createElement('datalist');
-      datalist.id = `sugestoes-${nome}`;
+  // Número sobre a imagem
+  const numberLabel = document.createElement('div');
+  numberLabel.textContent = nome;
+  numberLabel.style.position = 'absolute';
+  numberLabel.style.top = '5px';
+  numberLabel.style.left = '5px';
+  numberLabel.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+  numberLabel.style.color = 'white';
+  numberLabel.style.padding = '2px 6px';
+  numberLabel.style.borderRadius = '3px';
+  numberLabel.style.fontSize = '14px';
+  numberLabel.style.fontWeight = 'bold';
+  numberLabel.style.zIndex = '10';
 
-      const cadastrarBtn = document.createElement('button');
-      cadastrarBtn.textContent = "Cadastrar Tag";
+  // Monta estrutura visual
+  imageContainer.appendChild(link);
+  imageContainer.appendChild(numberLabel);
+  card.appendChild(imageContainer);
+
+  // Seleção
+  const select = document.createElement('select');
+  select.innerHTML = `
+    <option value="">-- Marcar --</option>
+    <option value="relevante">Relevante</option>
+    <option value="irrelevante">Irrelevante</option>
+    <option value="lixo">Lixo</option>
+    <option value="utilizado">Utilizado</option>
+  `;
+  select.addEventListener("change", aplicarFiltro);
+
+  // Tag input
+  const textarea = document.createElement('input');
+  textarea.type = "text";
+  textarea.placeholder = "Digite uma tag...";
+  textarea.setAttribute("list", `sugestoes-${nome}`);
+
+  const datalist = document.createElement('datalist');
+  datalist.id = `sugestoes-${nome}`;
+
+  const cadastrarBtn = document.createElement('button');
+  cadastrarBtn.textContent = "Cadastrar Tag";
+  cadastrarBtn.style.display = "none";
+
+  const tagList = document.createElement("div");
+  tagList.className = "tag-list";
+
+  // Atualiza sugestões
+  textarea.addEventListener("input", async () => {
+    const termo = textarea.value.trim();
+    if (!termo) {
+      datalist.innerHTML = "";
       cadastrarBtn.style.display = "none";
-
-      const tagList = document.createElement("div");
-      tagList.className = "tag-list";
-
-      // Atualiza sugestões
-      textarea.addEventListener("input", async () => {
-        const termo = textarea.value.trim();
-        if (!termo) {
-          datalist.innerHTML = "";
-          cadastrarBtn.style.display = "none";
-          return;
-        }
-
-        const q = query(collection(db, "tags"), where("nome", ">=", termo), where("nome", "<=", termo+"\uf8ff"));
-        const snap = await getDocs(q);
-        datalist.innerHTML = "";
-        let existe = false;
-        snap.forEach(docSnap => {
-          const tag = docSnap.data().nome;
-          const opt = document.createElement("option");
-          opt.value = tag;
-          datalist.appendChild(opt);
-          if(tag.toLowerCase() === termo.toLowerCase()) existe = true;
-        });
-        cadastrarBtn.style.display = existe ? "none" : "inline-block";
-      });
-
-      cadastrarBtn.onclick = async () => {
-        const novaTag = textarea.value.trim();
-        if (!novaTag) return alert("Digite uma tag!");
-        try {
-          await addDoc(collection(db, "tags"), { nome: novaTag });
-          alert(`Tag "${novaTag}" cadastrada!`);
-          cadastrarBtn.style.display = "none";
-        } catch(e){ console.error(e); alert("Erro ao cadastrar tag"); }
-      };
-
-      const addTagBtn = document.createElement("button");
-      addTagBtn.textContent = "Adicionar Tag";
-      addTagBtn.onclick = async () => {
-        const novaTag = textarea.value.trim();
-        if (!novaTag) return alert("Digite uma tag!");
-        try {
-          const docRef = doc(collection(db, "Elza"), nome);
-          await setDoc(docRef, { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
-          await updateDoc(docRef, { tags: arrayUnion(novaTag) });
-          const tagEl = document.createElement("span");
-          tagEl.textContent = "#"+novaTag;
-          tagList.appendChild(tagEl);
-          textarea.value = "";
-        } catch(e){ console.error(e); alert("Erro ao adicionar tag"); }
-      };
-
-      const salvarBtn = document.createElement("button");
-      salvarBtn.textContent = "Salvar Card";
-      salvarBtn.onclick = async () => {
-        try {
-          await setDoc(doc(collection(db, "Elza"), nome), { nome:nome, link:links[idx], selecao: select.value, imagem:`tub/${nome}.png`, timestamp: new Date() }, {merge:true});
-          alert(`Card ${nome} salvo!`);
-          aplicarFiltro();
-        } catch(e){ console.error(e); alert("Erro ao salvar"); }
-      };
-
-      // Carrega dados salvos
-      (async ()=>{
-        const docRef = doc(collection(db,"Elza"),nome);
-        const snap = await getDoc(docRef);
-        if(snap.exists()){
-          const data = snap.data();
-          if(data.selecao) select.value = data.selecao;
-          if(data.tags && data.tags.length>0){
-            data.tags.forEach(t => { const tagEl = document.createElement("span"); tagEl.textContent = "#"+t; tagList.appendChild(tagEl); });
-          }
-        }
-      })();
-
-      const controls = document.createElement("div");
-      controls.className = "controls";
-      controls.appendChild(select);
-      controls.appendChild(textarea);
-      controls.appendChild(datalist);
-      controls.appendChild(cadastrarBtn);
-      controls.appendChild(addTagBtn);
-      controls.appendChild(salvarBtn);
-      controls.appendChild(tagList);
-
-      card.appendChild(controls);
-      return card;
+      return;
     }
+
+    const q = query(
+      collection(db, "tags"),
+      where("nome", ">=", termo),
+      where("nome", "<=", termo + "\uf8ff")
+    );
+    const snap = await getDocs(q);
+    datalist.innerHTML = "";
+    let existe = false;
+    snap.forEach(docSnap => {
+      const tag = docSnap.data().nome;
+      const opt = document.createElement("option");
+      opt.value = tag;
+      datalist.appendChild(opt);
+      if (tag.toLowerCase() === termo.toLowerCase()) existe = true;
+    });
+    cadastrarBtn.style.display = existe ? "none" : "inline-block";
+  });
+
+  cadastrarBtn.onclick = async () => {
+    const novaTag = textarea.value.trim();
+    if (!novaTag) return alert("Digite uma tag!");
+    try {
+      await addDoc(collection(db, "tags"), { nome: novaTag });
+      alert(`Tag "${novaTag}" cadastrada!`);
+      cadastrarBtn.style.display = "none";
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao cadastrar tag");
+    }
+  };
+
+  const addTagBtn = document.createElement("button");
+  addTagBtn.textContent = "Adicionar Tag";
+  addTagBtn.onclick = async () => {
+    const novaTag = textarea.value.trim();
+    if (!novaTag) return alert("Digite uma tag!");
+    try {
+      const docRef = doc(collection(db, "Elza"), nome);
+      await setDoc(
+        docRef,
+        {
+          nome: nome,
+          link: links[idx],
+          selecao: select.value,
+          imagem: `tub/${nome}.png`,
+          timestamp: new Date()
+        },
+        { merge: true }
+      );
+      await updateDoc(docRef, { tags: arrayUnion(novaTag) });
+      const tagEl = document.createElement("span");
+      tagEl.textContent = "#" + novaTag;
+      tagList.appendChild(tagEl);
+      textarea.value = "";
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao adicionar tag");
+    }
+  };
+
+  const salvarBtn = document.createElement("button");
+  salvarBtn.textContent = "Salvar Card";
+  salvarBtn.onclick = async () => {
+    try {
+      await setDoc(
+        doc(collection(db, "Elza"), nome),
+        {
+          nome: nome,
+          link: links[idx],
+          selecao: select.value,
+          imagem: `tub/${nome}.png`,
+          timestamp: new Date()
+        },
+        { merge: true }
+      );
+      alert(`Card ${nome} salvo!`);
+      aplicarFiltro();
+    } catch (e) {
+      console.error(e);
+      alert("Erro ao salvar");
+    }
+  };
+
+  // Carrega dados salvos
+  (async () => {
+    const docRef = doc(collection(db, "Elza"), nome);
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      if (data.selecao) select.value = data.selecao;
+      if (data.tags && data.tags.length > 0) {
+        data.tags.forEach(t => {
+          const tagEl = document.createElement("span");
+          tagEl.textContent = "#" + t;
+          tagList.appendChild(tagEl);
+        });
+      }
+    }
+  })();
+
+  const controls = document.createElement("div");
+  controls.className = "controls";
+  controls.appendChild(select);
+  controls.appendChild(textarea);
+  controls.appendChild(datalist);
+  controls.appendChild(cadastrarBtn);
+  controls.appendChild(addTagBtn);
+  controls.appendChild(salvarBtn);
+  controls.appendChild(tagList);
+
+  card.appendChild(controls);
+  return card;
+}
+
+
+
+
 
     function loadBatch(){
       if(loading) return;
