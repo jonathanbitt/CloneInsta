@@ -942,7 +942,7 @@
     <option value="lixo">Lixo</option>
     <option value="utilizado">Utilizado</option>
   `;
-  select.addEventListener("change", aplicarFiltro);
+ // select.addEventListener("change", aplicarFiltro);
 
   // Tag input
   const textarea = document.createElement('input');
@@ -1033,19 +1033,15 @@
   salvarBtn.textContent = "Salvar Card";
   salvarBtn.onclick = async () => {
     try {
-      await setDoc(
-        doc(collection(db, "Elza"), nome),
-        {
-          nome: nome,
-          link: links[idx],
-          selecao: select.value,
-          imagem: `tub/${nome}.png`,
-          timestamp: new Date()
-        },
-        { merge: true }
-      );
+      await setDoc(doc(collection(db, "Elza"), nome), {
+        nome: nome,
+        link: links[idx],
+        selecao: select.value, // Usa o valor selecionado
+        imagem: `tub/${nome}.png`,
+        timestamp: new Date()
+      }, { merge: true });
       alert(`Card ${nome} salvo!`);
-      aplicarFiltro();
+      aplicarFiltro(); // ✅ Reaplica o filtro APÓS salvar
     } catch (e) {
       console.error(e);
       alert("Erro ao salvar");
