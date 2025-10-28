@@ -23,6 +23,10 @@
     .tag-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
     .tag-list span{background:#eee;padding:4px 8px;border-radius:12px;font-size:12px}
     .loading{display:flex;align-items:center;justify-content:center;padding:16px;color:var(--muted)}
+    .sync-status{position:fixed;top:70px;right:20px;padding:8px 12px;border-radius:4px;font-size:12px;z-index:1000}
+    .sync-status.synced{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
+    .sync-status.pending{background:#fff3cd;color:#856404;border:1px solid #ffeaa7}
+    .sync-status.error{background:#f8d7da;color:#721c24;border:1px solid #f5c6cb}
     @media(min-width:1180px){.page{display:block};.container{max-width:100%;margin:28px;}}
     @media(max-width:1000px){.grid{grid-template-columns:repeat(3,1fr)}}
     @media(max-width:720px){.grid{grid-template-columns:repeat(2,1fr)}}
@@ -46,11 +50,13 @@
 </select>
     </div>
     <nav style="display:flex;gap:12px;align-items:center">
-      <button id="btn-atualizar-json" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Atualizar JSON</button>
+      <button id="btn-forcar-sincronizacao" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Forçar Sincronização</button>
       <button aria-label="Novo" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Novo</button>
       <button aria-label="Perfil" style="padding:8px 10px;border-radius:6px;border:1px solid #dbdbdb;background:#fff">Perfil</button>
     </nav>
   </header>
+
+  <div id="syncStatus" class="sync-status" style="display:none"></div>
 
   <main class="container page">
     <section id="feed" class="grid" aria-live="polite" aria-busy="false"></section>
@@ -64,14 +70,14 @@
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
     import { 
-      getFirestore, collection, doc, setDoc, getDoc, addDoc, query, where, getDocs, updateDoc, arrayUnion 
+      getFirestore, collection, doc, setDoc, getDoc, addDoc, query, where, getDocs, updateDoc, arrayUnion,
+      serverTimestamp 
     } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
     // =============================================================================
     // CONFIGURAÇÃO DA COLEÇÃO - MODIFIQUE AQUI PARA USAR OUTRA COLEÇÃO
     // =============================================================================
     const NOME_COLECAO = "noeminagy.teacher"; // ← Altere este valor para outra coleção
-    const NOME_JSON = "noeminagy.teacher.json"; // ← Altere este valor para outro JSON
     // =============================================================================
 
     const firebaseConfig = {
@@ -90,81 +96,158 @@
     const feed = document.getElementById('feed');
     const loadingIndicator = document.getElementById('loadingIndicator');
     const filtroSelect = document.getElementById("filtro-selecao");
+    const syncStatus = document.getElementById('syncStatus');
+    const btnForcarSincronizacao = document.getElementById('btn-forcar-sincronizacao');
 
     // Atualiza o título da página com o nome da coleção
     document.title = `Clone Instagram - ${NOME_COLECAO}`;
 
     // Cache global em memória
     let cacheGlobal = null;
+    let lastUpdatedLocal = null;
 
-    async function carregarDadosInteligente() {
-      const AGORA = Date.now();
-      const ULTIMA_SYNC = parseInt(localStorage.getItem('ultimaSincronizacao') || '0');
-      const CACHE_LOCAL = localStorage.getItem(`${NOME_COLECAO}_cache`);
+    // Função para atualizar o status de sincronização
+    function atualizarStatusSincronizacao(mensagem, tipo = 'synced') {
+      syncStatus.textContent = mensagem;
+      syncStatus.className = `sync-status ${tipo}`;
+      syncStatus.style.display = 'block';
       
-      // Se já carregou nesta sessão, usa cache em memória
-      if (cacheGlobal) {
-        return cacheGlobal;
-      }
-
-      // Se tem cache local recente (menos de 5 minutos), usa ele
-      if (CACHE_LOCAL && (AGORA - ULTIMA_SYNC) < 300000) {
-        console.log('Usando cache local');
-        cacheGlobal = JSON.parse(CACHE_LOCAL);
-        return cacheGlobal;
-      }
-      
-      // Senão, busca do JSON local
-      try {
-        console.log(`Buscando dados do JSON local: ${NOME_JSON}`);
-        const dados = await carregarDoJSON();
-        
-        // Atualiza cache
-        cacheGlobal = dados;
-        localStorage.setItem(`${NOME_COLECAO}_cache`, JSON.stringify(dados));
-        localStorage.setItem('ultimaSincronizacao', AGORA.toString());
-        
-        return dados;
-      } catch (error) {
-        console.error('Erro ao carregar do JSON:', error);
-        
-        // Fallback para cache local
-        if (CACHE_LOCAL) {
-          cacheGlobal = JSON.parse(CACHE_LOCAL);
-          return cacheGlobal;
-        }
-        throw error;
+      // Oculta após 3 segundos se for sucesso
+      if (tipo === 'synced') {
+        setTimeout(() => {
+          syncStatus.style.display = 'none';
+        }, 3000);
       }
     }
 
-    async function carregarDoJSON() {
+    // Função para obter/atualizar o timestamp de última atualização
+    async function getLastUpdated() {
       try {
-        const response = await fetch(`./${NOME_JSON}`);
-        
-        if (!response.ok) {
-          throw new Error(`JSON response: ${response.status}`);
+        const metaDoc = await getDoc(doc(db, NOME_COLECAO, 'meta'));
+        if (metaDoc.exists()) {
+          return metaDoc.data().lastUpdated;
+        } else {
+          // Cria o documento meta se não existir
+          const initialTimestamp = serverTimestamp();
+          await setDoc(doc(db, NOME_COLECAO, 'meta'), {
+            lastUpdated: initialTimestamp
+          });
+          return initialTimestamp;
         }
+      } catch (error) {
+        console.error('Erro ao obter lastUpdated:', error);
+        return null;
+      }
+    }
+
+    // Função para atualizar o timestamp de última atualização
+    async function updateLastUpdated() {
+      try {
+        await setDoc(doc(db, NOME_COLECAO, 'meta'), {
+          lastUpdated: serverTimestamp()
+        }, { merge: true });
+        return true;
+      } catch (error) {
+        console.error('Erro ao atualizar lastUpdated:', error);
+        return false;
+      }
+    }
+
+    // Função para carregar dados de forma inteligente
+    async function carregarDadosInteligente() {
+      const CACHE_LOCAL = localStorage.getItem(`${NOME_COLECAO}_cache`);
+      const LAST_UPDATED_LOCAL = localStorage.getItem(`${NOME_COLECAO}_lastUpdated`);
+      
+      // Se já carregou nesta sessão, usa cache em memória
+      if (cacheGlobal) {
+        console.log('Usando cache em memória');
+        return cacheGlobal;
+      }
+
+      // Tenta obter o lastUpdated do Firestore
+      let lastUpdatedFirestore;
+      try {
+        lastUpdatedFirestore = await getLastUpdated();
+        console.log('LastUpdated Firestore:', lastUpdatedFirestore);
+      } catch (error) {
+        console.error('Erro ao verificar lastUpdated:', error);
+        // Se não conseguiu conectar, usa cache local se existir
+        if (CACHE_LOCAL) {
+          cacheGlobal = JSON.parse(CACHE_LOCAL);
+          atualizarStatusSincronizacao('Offline - usando cache local', 'pending');
+          return cacheGlobal;
+        }
+        throw new Error('Não foi possível conectar ao Firestore');
+      }
+
+      // Verifica se precisa sincronizar
+      const precisaSincronizar = !CACHE_LOCAL || !LAST_UPDATED_LOCAL || 
+                                LAST_UPDATED_LOCAL !== JSON.stringify(lastUpdatedFirestore);
+
+      if (precisaSincronizar) {
+        console.log('Sincronizando com Firestore...');
+        atualizarStatusSincronizacao('Sincronizando...', 'pending');
+        const dadosFirestore = await carregarDoFirestore();
         
-        const data = await response.json();
+        // Atualiza cache local
+        cacheGlobal = dadosFirestore;
+        localStorage.setItem(`${NOME_COLECAO}_cache`, JSON.stringify(dadosFirestore));
+        localStorage.setItem(`${NOME_COLECAO}_lastUpdated`, JSON.stringify(lastUpdatedFirestore));
+        
+        atualizarStatusSincronizacao('Sincronizado com sucesso', 'synced');
+        return dadosFirestore;
+      } else {
+        console.log('Usando cache local (dados atualizados)');
+        cacheGlobal = JSON.parse(CACHE_LOCAL);
+        atualizarStatusSincronizacao('Dados atualizados', 'synced');
+        return cacheGlobal;
+      }
+    }
+
+    // Função para carregar todos os dados do Firestore
+    async function carregarDoFirestore() {
+      try {
+        const querySnapshot = await getDocs(collection(db, NOME_COLECAO));
         const dadosMap = {};
         
-        // Processa todos os dados do JSON
-        data.forEach(item => {
-          if (item.nome) {
-            dadosMap[item.nome] = {
-              link: item.link || '#',
-              selecao: item.selecao || '',
-              tags: item.tags || [],
-              imagem: item.imagem || `tub/${item.nome}.png`,
-              timestamp: item.timestamp
+        querySnapshot.forEach((docSnap) => {
+          const data = docSnap.data();
+          // Ignora o documento meta
+          if (docSnap.id !== 'meta' && data.nome) {
+            dadosMap[data.nome] = {
+              link: data.link || '#',
+              selecao: data.selecao || '',
+              tags: data.tags || [],
+              imagem: data.imagem || `tub/${data.nome}.png`,
+              timestamp: data.timestamp
             };
           }
         });
         
+        console.log(`Carregados ${Object.keys(dadosMap).length} documentos do Firestore`);
         return dadosMap;
       } catch (error) {
-        console.error("Erro ao carregar JSON:", error);
-        return {};
+        console.error("Erro ao carregar do Firestore:", error);
+        throw error;
+      }
+    }
+
+    // Função para forçar sincronização completa
+    async function forcarSincronizacao() {
+      try {
+        atualizarStatusSincronizacao('Forçando sincronização...', 'pending');
+        
+        // Limpa cache local para forçar recarregamento
+        localStorage.removeItem(`${NOME_COLECAO}_cache`);
+        localStorage.removeItem(`${NOME_COLECAO}_lastUpdated`);
+        cacheGlobal = null;
+        
+        // Recarrega os dados
+        await loadAllCards();
+        atualizarStatusSincronizacao('Sincronização forçada concluída', 'synced');
+      } catch (error) {
+        console.error('Erro na sincronização forçada:', error);
+        atualizarStatusSincronizacao('Erro na sincronização', 'error');
       }
     }
 
@@ -191,14 +274,14 @@
 
     filtroSelect.addEventListener("change", aplicarFiltro);
 
-    function createCard(nome, dadosJSON) {
+    function createCard(nome, dados) {
       const card = document.createElement('article');
       card.className = 'card';
       
-      // Usa dados do JSON
-      const linkUrl = dadosJSON.link || '#';
-      const selecaoSalva = dadosJSON.selecao || '';
-      const tagsSalvas = dadosJSON.tags || [];
+      // Usa dados do cache
+      const linkUrl = dados.link || '#';
+      const selecaoSalva = dados.selecao || '';
+      const tagsSalvas = dados.tags || [];
 
       // Container para a imagem e o número
       const imageContainer = document.createElement('div');
@@ -214,7 +297,7 @@
 
       const img = document.createElement('img');
       img.className = 'thumb';
-      img.src = dadosJSON.imagem || `tub/${nome}.png`;
+      img.src = dados.imagem || `tub/${nome}.png`;
       img.alt = `Thumbnail ${nome}`;
       img.style.width = '100%';
       img.style.height = 'auto';
@@ -251,7 +334,7 @@
       `;
       select.style.width = '100%';
       select.style.marginTop = '8px';
-      select.value = selecaoSalva; // Preenche com dados do JSON
+      select.value = selecaoSalva;
 
       // Tag input
       const textarea = document.createElement('input');
@@ -282,7 +365,7 @@
       tagList.className = "tag-list";
       tagList.style.marginTop = '8px';
 
-      // Preenche tags salvas do JSON
+      // Preenche tags salvas
       tagsSalvas.forEach(tag => {
         const tagEl = document.createElement("span");
         tagEl.textContent = "#" + tag;
@@ -362,7 +445,7 @@
         try {
           const docRef = doc(collection(db, NOME_COLECAO), nome);
           
-          // Primeiro, cria/atualiza o documento básico
+          // Atualiza o documento
           await setDoc(
             docRef,
             {
@@ -370,15 +453,14 @@
               link: linkUrl,
               selecao: select.value,
               imagem: `tub/${nome}.png`,
-              timestamp: new Date()
+              timestamp: new Date(),
+              tags: arrayUnion(novaTag)
             },
             { merge: true }
           );
           
-          // Depois adiciona a tag
-          await updateDoc(docRef, { 
-            tags: arrayUnion(novaTag) 
-          });
+          // Atualiza o timestamp global
+          await updateLastUpdated();
           
           // Atualiza a interface
           const tagEl = document.createElement("span");
@@ -396,7 +478,12 @@
           cadastrarBtn.style.display = "none";
 
           // Atualiza cache local
-          await atualizarCacheLocal(nome, { tags: [...tagsSalvas, novaTag] });
+          await atualizarCacheLocal(nome, { 
+            tags: [...tagsSalvas, novaTag],
+            selecao: select.value
+          });
+          
+          atualizarStatusSincronizacao('Alterações salvas e sincronizadas', 'synced');
           
         } catch (e) {
           console.error("Erro ao adicionar tag:", e);
@@ -425,11 +512,15 @@
             timestamp: new Date()
           }, { merge: true });
           
+          // Atualiza o timestamp global
+          await updateLastUpdated();
+          
           // Atualiza cache local
           await atualizarCacheLocal(nome, { selecao: select.value });
           
           alert(`Card ${nome} salvo!`);
           aplicarFiltro();
+          atualizarStatusSincronizacao('Alterações salvas e sincronizadas', 'synced');
         } catch (e) {
           console.error("Erro ao salvar card:", e);
           alert("Erro ao salvar");
@@ -465,87 +556,13 @@
       if (cacheGlobal && cacheGlobal[nome]) {
         cacheGlobal[nome] = { ...cacheGlobal[nome], ...novosDados };
         localStorage.setItem(`${NOME_COLECAO}_cache`, JSON.stringify(cacheGlobal));
-        localStorage.setItem('ultimaSincronizacao', Date.now().toString());
+        
+        // Atualiza o lastUpdated local também
+        const lastUpdated = await getLastUpdated();
+        if (lastUpdated) {
+          localStorage.setItem(`${NOME_COLECAO}_lastUpdated`, JSON.stringify(lastUpdated));
+        }
       }
-    }
-
-    async function gerarJSONParaAtualizacaoGitHub() {
-      try {
-        // Busca todos os dados atualizados do Firebase
-        const querySnapshot = await getDocs(collection(db, NOME_COLECAO));
-        const todosDados = [];
-        
-        querySnapshot.forEach((doc) => {
-          todosDados.push(doc.data());
-        });
-
-        // Ordena por nome numérico
-        todosDados.sort((a, b) => parseInt(a.nome) - parseInt(b.nome));
-        
-        // Gera o JSON no formato correto
-        const jsonAtualizado = todosDados.map(item => ({
-          nome: item.nome,
-          link: item.link,
-          selecao: item.selecao || "",
-          imagem: item.imagem || `tub/${item.nome}.png`,
-          timestamp: item.timestamp || { seconds: 1761594185, nanoseconds: 698000000 },
-          tags: item.tags || []
-        }));
-
-        // Cria download do JSON
-        const jsonStr = JSON.stringify(jsonAtualizado, null, 2);
-        const nomeArquivo = NOME_JSON.replace('.json', '_updated.json');
-        downloadJSON(jsonStr, nomeArquivo);
-        
-        mostrarInstrucoesGitHub(nomeArquivo);
-        
-      } catch (error) {
-        console.error('Erro ao gerar JSON:', error);
-        alert('Erro ao gerar JSON atualizado');
-      }
-    }
-
-    function downloadJSON(jsonStr, filename) {
-      const blob = new Blob([jsonStr], { type: 'application/json' });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-    }
-
-    function mostrarInstrucoesGitHub(nomeArquivo) {
-      const modal = document.createElement('div');
-      modal.style.cssText = `
-        position: fixed;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        background: white;
-        padding: 20px;
-        border-radius: 8px;
-        box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-        z-index: 1000;
-        max-width: 500px;
-      `;
-      
-      modal.innerHTML = `
-        <h3>📝 Atualizar GitHub - ${NOME_COLECAO}</h3>
-        <p><strong>JSON atualizado gerado com sucesso!</strong></p>
-        <ol>
-          <li>O arquivo <code>${nomeArquivo}</code> foi baixado</li>
-          <li>Vá no seu repositório GitHub</li>
-          <li>Substitua o arquivo <code>${NOME_JSON}</code> por este novo</li>
-          <li>Faça commit das mudanças</li>
-        </ol>
-        <p><em>✅ Todos os dispositivos serão atualizados em 1-2 minutos</em></p>
-        <button onclick="this.parentElement.remove()" style="padding: 8px 16px; margin-top: 10px;">Fechar</button>
-      `;
-      
-      document.body.appendChild(modal);
     }
 
     async function loadAllCards() {
@@ -553,13 +570,13 @@
       feed.setAttribute('aria-busy', 'true');
       
       try {
-        // Carrega dados do JSON local
+        // Carrega dados de forma inteligente
         const dados = await carregarDadosInteligente();
         
         // Limpa o feed
         feed.innerHTML = '';
         
-        // Cria cards para todos os itens do JSON
+        // Cria cards para todos os itens
         Object.keys(dados).sort((a, b) => parseInt(a) - parseInt(b)).forEach(nome => {
           const card = createCard(nome, dados[nome]);
           feed.appendChild(card);
@@ -567,7 +584,7 @@
         
       } catch (error) {
         console.error("Erro ao carregar cards:", error);
-        alert("Erro ao carregar os dados");
+        alert("Erro ao carregar os dados: " + error.message);
       } finally {
         loadingIndicator.style.display = 'none';
         feed.setAttribute('aria-busy', 'false');
@@ -575,10 +592,8 @@
       }
     }
 
-    // Botão para gerar JSON atualizado
-    document.getElementById('btn-atualizar-json').addEventListener('click', async () => {
-      await gerarJSONParaAtualizacaoGitHub();
-    });
+    // Botão para forçar sincronização
+    btnForcarSincronizacao.addEventListener('click', forcarSincronizacao);
 
     // Carrega todos os cards quando a página é carregada
     loadAllCards();
