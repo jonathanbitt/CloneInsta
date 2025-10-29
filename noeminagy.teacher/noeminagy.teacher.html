@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Clone Instagram - Paginação Inteligente (último alterado)</title>
+  <title>Clone Instagram - Paginação + Tags</title>
   <style>
     :root{--bg:#fafafa;--card:#fff;--muted:#8e8e8e;--accent:#0095f6}
     html,body{height:100%;margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial;background:var(--bg);color:#111}
@@ -13,6 +13,9 @@
     .card{background:var(--card);border:1px solid #dbdbdb;border-radius:3px;padding:8px;box-shadow:0 1px 0 rgba(0,0,0,0.02)}
     .thumb{width:100%;aspect-ratio:319/486;object-fit:cover;border-radius:2px;display:block;background:#efefef}
     button{padding:8px 12px;border-radius:4px;border:0;background:var(--accent);color:#fff;cursor:pointer}
+    input,select{width:100%;padding:8px;margin-top:6px;border:1px solid #ccc;border-radius:4px}
+    .tag-list{margin-top:8px;display:flex;flex-wrap:wrap;gap:6px}
+    .tag-list span{background:#eee;padding:4px 8px;border-radius:12px;font-size:12px}
     .loading{display:flex;align-items:center;justify-content:center;padding:16px;color:var(--muted)}
     .sync-status{position:fixed;top:70px;right:20px;padding:8px 12px;border-radius:4px;font-size:12px;z-index:1000}
     .synced{background:#d4edda;color:#155724;border:1px solid #c3e6cb}
@@ -24,7 +27,7 @@
   <header>
     <div class="brand"><h1>Instagram</h1></div>
     <nav style="display:flex;gap:12px;align-items:center">
-      <button id="btn-carregar-mais">Carregar Mais (100)</button>
+      <button id="btn-carregar-mais">Carregar +100</button>
       <button id="btn-resetar">Reiniciar</button>
     </nav>
   </header>
@@ -35,18 +38,17 @@
   </main>
 
   <div id="loadingIndicator" class="loading" style="display:none">
-    <div class="spinner" aria-hidden="true"></div>
-    <span style="margin-left:8px">Carregando...</span>
+    <span>Carregando...</span>
   </div>
 
   <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-app.js";
     import { 
-      getFirestore, doc, getDoc, setDoc, collection 
+      getFirestore, doc, getDoc, setDoc, collection, addDoc, getDocs, query, where, arrayUnion
     } from "https://www.gstatic.com/firebasejs/10.13.1/firebase-firestore.js";
 
     // ========================
-    // CONFIGURAÇÕES FIREBASE
+    // CONFIG FIREBASE
     // ========================
     const firebaseConfig = {
       apiKey: "AIzaSyCNgDqkqhsFQY7bfrWK2_VPtGUoEyyIBq4",
@@ -70,7 +72,7 @@
     const btnResetar = document.getElementById("btn-resetar");
 
     // ========================
-    // FUNÇÕES DE STATUS
+    // STATUS
     // ========================
     function setStatus(msg, tipo="synced") {
       syncStatus.textContent = msg;
@@ -80,7 +82,7 @@
     }
 
     // ========================
-    // GERENCIAMENTO META
+    // META
     // ========================
     async function getMeta() {
       const ref = doc(db, NOME_COLECAO, "meta");
@@ -98,13 +100,12 @@
 
     async function resetarMeta() {
       await setDoc(doc(db, NOME_COLECAO, "meta"), { lastLoaded: 0, lastEdited: 0, lastUpdated: Date.now() }, { merge: true });
-      localStorage.removeItem(`${NOME_COLECAO}_lastLoaded`);
-      localStorage.removeItem(`${NOME_COLECAO}_lastEdited`);
-      setStatus("Meta resetada (voltou ao início)", "pending");
+      feed.innerHTML = "";
+      setStatus("Meta resetada", "pending");
     }
 
     // ========================
-    // CARREGAMENTO PAGINADO
+    // CARREGAR LOTE
     // ========================
     async function carregarLote() {
       loadingIndicator.style.display = "flex";
@@ -113,7 +114,6 @@
         const base = parseInt(meta.lastEdited || 0);
         const inicio = base + 1;
         const fim = inicio + LIMITE - 1;
-        console.log(`Carregando documentos ${inicio} a ${fim}`);
 
         const novosDados = {};
         for (let i = inicio; i <= fim; i++) {
@@ -125,7 +125,8 @@
               nome: d.nome || String(i),
               link: d.link || "#",
               selecao: d.selecao || "",
-              imagem: d.imagem || `tub/${i}.png`
+              imagem: d.imagem || `tub/${i}.png`,
+              tags: d.tags || []
             };
           }
         }
@@ -135,9 +136,7 @@
         });
 
         await updateMeta({ lastLoaded: fim });
-        localStorage.setItem(`${NOME_COLECAO}_lastLoaded`, fim);
         setStatus(`Carregados ${Object.keys(novosDados).length} documentos (${inicio}-${fim})`, "synced");
-
       } catch (e) {
         console.error("Erro ao carregar lote:", e);
         setStatus("Erro ao carregar lote", "error");
@@ -147,7 +146,30 @@
     }
 
     // ========================
-    // UI
+    // TAGS
+    // ========================
+    async function buscarTags(termo) {
+      const q = query(
+        collection(db, "tags"),
+        where("nome", ">=", termo),
+        where("nome", "<=", termo + "\uf8ff")
+      );
+      const snap = await getDocs(q);
+      return snap.docs.map(d => d.data().nome);
+    }
+
+    async function cadastrarTag(novaTag) {
+      await addDoc(collection(db, "tags"), { nome: novaTag });
+    }
+
+    async function adicionarTagAoCard(nome, novaTag) {
+      const ref = doc(collection(db, NOME_COLECAO), nome);
+      await setDoc(ref, { tags: arrayUnion(novaTag) }, { merge: true });
+      await updateMeta({ lastEdited: parseInt(nome) });
+    }
+
+    // ========================
+    // CARD
     // ========================
     function criarCard(nome, dados) {
       const card = document.createElement("article");
@@ -158,26 +180,64 @@
       img.src = dados.imagem;
       img.alt = nome;
 
-      const numberLabel = document.createElement("div");
-      numberLabel.textContent = nome;
-      numberLabel.style = "position:absolute;top:5px;left:5px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:3px;font-size:14px;font-weight:bold";
+      const label = document.createElement("div");
+      label.textContent = nome;
+      label.style = "position:absolute;top:5px;left:5px;background:rgba(0,0,0,0.7);color:#fff;padding:2px 6px;border-radius:3px;font-size:14px;font-weight:bold";
 
-      const wrapper = document.createElement("div");
-      wrapper.style.position = "relative";
-      wrapper.appendChild(img);
-      wrapper.appendChild(numberLabel);
+      const wrap = document.createElement("div");
+      wrap.style.position = "relative";
+      wrap.appendChild(img);
+      wrap.appendChild(label);
 
-      const salvarBtn = document.createElement("button");
-      salvarBtn.textContent = "Salvar (Simular Alteração)";
-      salvarBtn.style.display = "block";
-      salvarBtn.style.marginTop = "8px";
-      salvarBtn.onclick = async () => {
-        await updateMeta({ lastEdited: parseInt(nome) });
-        setStatus(`Último alterado: ${nome}`, "pending");
+      const tagList = document.createElement("div");
+      tagList.className = "tag-list";
+      dados.tags.forEach(tag => {
+        const t = document.createElement("span");
+        t.textContent = "#" + tag;
+        tagList.appendChild(t);
+      });
+
+      const inputTag = document.createElement("input");
+      inputTag.placeholder = "Digite uma tag...";
+      const datalist = document.createElement("datalist");
+      datalist.id = `sug-${nome}`;
+      inputTag.setAttribute("list", datalist.id);
+
+      inputTag.addEventListener("input", async () => {
+        const termo = inputTag.value.trim();
+        datalist.innerHTML = "";
+        if (!termo) return;
+        const tags = await buscarTags(termo);
+        tags.forEach(tag => {
+          const opt = document.createElement("option");
+          opt.value = tag;
+          datalist.appendChild(opt);
+        });
+      });
+
+      const btnAddTag = document.createElement("button");
+      btnAddTag.textContent = "Adicionar Tag";
+      btnAddTag.onclick = async () => {
+        const novaTag = inputTag.value.trim();
+        if (!novaTag) return alert("Digite uma tag!");
+        await cadastrarTag(novaTag);
+        await adicionarTagAoCard(nome, novaTag);
+        const el = document.createElement("span");
+        el.textContent = "#" + novaTag;
+        tagList.appendChild(el);
+        inputTag.value = "";
+        setStatus(`Tag "${novaTag}" adicionada ao card ${nome}`, "synced");
       };
 
-      card.appendChild(wrapper);
-      card.appendChild(salvarBtn);
+      const salvarBtn = document.createElement("button");
+      salvarBtn.textContent = "Salvar Card";
+      salvarBtn.style.background = "#6c757d";
+      salvarBtn.onclick = async () => {
+        await updateMeta({ lastEdited: parseInt(nome) });
+        setStatus(`Card ${nome} salvo`, "pending");
+      };
+
+      card.append(wrap, inputTag, datalist, btnAddTag, salvarBtn, tagList);
       return card;
     }
 
@@ -185,16 +245,8 @@
     // EVENTOS
     // ========================
     btnCarregarMais.onclick = carregarLote;
-    btnResetar.onclick = async () => {
-      if (confirm("Deseja realmente resetar o ponto de carregamento?")) {
-        await resetarMeta();
-        feed.innerHTML = "";
-      }
-    };
+    btnResetar.onclick = resetarMeta;
 
-    // ========================
-    // INICIALIZAÇÃO
-    // ========================
     window.addEventListener("load", async () => {
       const meta = await getMeta();
       const base = parseInt(meta.lastEdited || 0);
