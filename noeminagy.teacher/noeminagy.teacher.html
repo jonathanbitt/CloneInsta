@@ -318,6 +318,23 @@
 
       imageContainer.appendChild(suggestionsOverlay);
 
+      // Select para marcação - ADICIONADO AQUI
+      const select = document.createElement("select");
+      select.style.width = "100%";
+      select.style.marginTop = "8px";
+      select.innerHTML = `
+        <option value="">-- Marcar --</option>
+        <option value="relevante">Relevante</option>
+        <option value="irrelevante">Irrelevante</option>
+        <option value="lixo">Lixo</option>
+        <option value="utilizado">Utilizado</option>
+      `;
+      
+      // Preenche o valor salvo se existir
+      if (dados.selecao) {
+        select.value = dados.selecao;
+      }
+
       // Campo de tag
       const inputTag = document.createElement("input");
       inputTag.placeholder = "Digite uma tag...";
@@ -427,14 +444,15 @@
           nome,
           link: dados.link,
           imagem: dados.imagem,
-          selecao: dados.selecao || "",
+          selecao: select.value, // Salva a seleção atual
           timestamp: new Date()
         }, { merge: true });
         await updateMeta({ lastEdited: parseInt(nome) });
         setStatus(`Card ${nome} salvo`, "pending");
       };
 
-      card.append(inputTag, cadastrarBtn, buttonRow, tagList);
+      // Adiciona os elementos na ordem correta
+      card.append(select, inputTag, cadastrarBtn, buttonRow, tagList);
       return card;
     }
 
